@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
             suggestedSlots: await getAvailableSlots(
               session.accessToken as string,
               eventData.date,
-              eventData.duration || 60
+              eventData.duration || 60,
+              eventData.time
             ),
           },
         } as ApiResponse<any>,

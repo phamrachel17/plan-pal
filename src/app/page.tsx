@@ -1,18 +1,26 @@
 'use client';
 
+import { useState } from 'react';
 import ChatUI from '@/components/chat/ChatUI';
 import GoogleSignIn from '@/components/auth/GoogleSignIn';
+import QuickAddModal from '@/components/chat/QuickAddModal';
 import { EventSuggestion } from '@/lib/types';
 
 export default function Home() {
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+
   const handleEventConfirm = (event: EventSuggestion) => {
     console.log('Event confirmed:', event);
     // Event is now scheduled to Google Calendar via the API
   };
 
   const handleQuickAdd = () => {
-    console.log('Quick add clicked');
-    // TODO: Open quick add modal
+    setShowQuickAdd(true);
+  };
+
+  const handleEventCreated = (event: EventSuggestion) => {
+    console.log('Quick add event created:', event);
+    // Event is now scheduled to Google Calendar via the API
   };
 
   return (
@@ -23,7 +31,7 @@ export default function Home() {
             Plan Pal
           </h1>
           <p className="text-lg text-gray-600 mb-4">
-            Your AI-powered planning assistant powered by Gemini
+            Your AI-powered planning assistant for seamless event scheduling
           </p>
           <div className="flex justify-center">
             <GoogleSignIn />
@@ -38,6 +46,13 @@ export default function Home() {
             />
           </div>
         </div>
+
+        {/* Quick Add Modal */}
+        <QuickAddModal
+          open={showQuickAdd}
+          onOpenChange={setShowQuickAdd}
+          onEventCreated={handleEventCreated}
+        />
       </div>
     </div>
   );

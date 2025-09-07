@@ -2,10 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent,  DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChatMessage, EventSuggestion } from '@/lib/types';
-import { Send, Plus, Calendar, Clock, MapPin, Check, X, AlertTriangle } from 'lucide-react';
+import CalendarModal from '../calendar/CalendarModal';
+import ChatHeader from './ChatHeader';
+import ChatInput from './ChatInput';
+import CalendarDialog from '../calendar/CalendarDialog';
+import ChatMessages from './ChatMessages';
+import PhoneNumberModal from '../PhoneNumberModal';
+import { declineNewEvent, rescheduleNewEvent, rescheduleExistingEvent } from '../logic/conflicts';
 
 interface ChatUIProps {
   onEventConfirm?: (event: EventSuggestion) => void;
@@ -18,6 +23,10 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [schedulingIds, setSchedulingIds] = useState<Record<string, boolean>>({});
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [userPhoneNumber, setUserPhoneNumber] = useState<string>('');
+  const [pendingEventForSms, setPendingEventForSms] = useState<EventSuggestion | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -39,13 +48,20 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
     setInputValue('');
     setIsLoading(true);
 
+    // Check if the previous message has reschedule context
+    const lastMessage = messages[messages.length - 1];
+    const rescheduleContext = lastMessage?.rescheduleContext;
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: inputValue.trim() }),
+        body: JSON.stringify({ 
+          message: inputValue.trim(),
+          rescheduleContext: rescheduleContext
+        }),
       });
 
       const data = await response.json();
@@ -99,43 +115,81 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
     setSchedulingIds(prev => ({ ...prev, [messageId]: true }));
 
     try {
-      const response = await fetch('/api/schedule', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ eventData }),
-      });
+      // Check if this is a reschedule existing event
+      if (eventData.rescheduleExisting) {
+        const response = await fetch('/api/update-event', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            eventId: eventData.rescheduleExisting.originalEventId,
+            eventData 
+          }),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (data.success) {
-        const confirmedEvent = { ...eventData, isConfirmed: true };
-        onEventConfirm?.(confirmedEvent);
-        
-        const confirmationMessage: ChatMessage = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `✅ Great! I've scheduled "${eventData.title}" for ${formatDate(eventData.date)} at ${formatTime(eventData.time)}.`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, confirmationMessage]);
-      } else if (response.status === 409) {
-        // Handle conflicts
-        const conflictMessage: ChatMessage = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `⚠️ I found a conflict at that time. Here are some alternative slots:`,
-          timestamp: new Date(),
-          eventData: {
-            ...eventData,
-            conflicts: data.data.conflicts,
-            suggestedSlots: data.data.suggestedSlots
-          }
-        };
-        setMessages(prev => [...prev, conflictMessage]);
+        if (data.success) {
+          const confirmationMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `✅ Great! I've rescheduled "${eventData.title}" to ${formatDate(eventData.date)} at ${formatTime(eventData.time)}.`,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, confirmationMessage]);
+        } else {
+          throw new Error(data.error || 'Failed to update event');
+        }
       } else {
-        throw new Error(data.error || 'Failed to schedule event');
+        // Regular new event creation
+        const response = await fetch('/api/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ eventData }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          const confirmedEvent = { ...eventData, isConfirmed: true };
+          onEventConfirm?.(confirmedEvent);
+          
+          // Check if user has phone number for SMS reminders
+          if (!userPhoneNumber) {
+            setPendingEventForSms(eventData);
+            setShowPhoneModal(true);
+          } else {
+            // Schedule SMS reminder
+            await scheduleSmsReminder(eventData);
+          }
+          
+          const confirmationMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `✅ Great! I've scheduled "${eventData.title}" for ${formatDate(eventData.date)} at ${formatTime(eventData.time)}.${userPhoneNumber ? ' 📱 SMS reminder scheduled!' : ''}`,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, confirmationMessage]);
+        } else if (response.status === 409) {
+          // Handle conflicts
+          const conflictMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `⚠️ I found a conflict at that time. Here are some alternative slots:`,
+            timestamp: new Date(),
+            eventData: {
+              ...eventData,
+              conflicts: data.data.conflicts,
+              suggestedSlots: data.data.suggestedSlots
+            }
+          };
+          setMessages(prev => [...prev, conflictMessage]);
+        } else {
+          throw new Error(data.error || 'Failed to schedule event');
+        }
       }
     } catch (error) {
       console.error('Error scheduling event:', error);
@@ -167,212 +221,121 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
       day: 'numeric'
     });
   };
+
+  const scheduleSmsReminder = async (eventData: EventSuggestion) => {
+    if (!userPhoneNumber) return;
+
+    try {
+      const response = await fetch('/api/sms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventId: Date.now().toString(), // In production, use actual event ID from calendar
+          eventTitle: eventData.title,
+          eventTime: eventData.time,
+          eventDate: eventData.date,
+          phoneNumber: userPhoneNumber,
+          reminderMinutes: 30
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('SMS reminder scheduled:', data.data);
+      } else {
+        console.error('Failed to schedule SMS reminder:', data.error);
+      }
+    } catch (error) {
+      console.error('Error scheduling SMS reminder:', error);
+    }
+  };
+
+  const handlePhoneNumberSaved = async (phoneNumber: string) => {
+    setUserPhoneNumber(phoneNumber);
+    
+    // If there's a pending event, schedule SMS reminder for it
+    if (pendingEventForSms) {
+      await scheduleSmsReminder(pendingEventForSms);
+      setPendingEventForSms(null);
+      
+      // Update the confirmation message to include SMS info
+      const smsMessage: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `📱 SMS reminder scheduled for "${pendingEventForSms.title}"! You'll get a text 30 minutes before the event.`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, smsMessage]);
+    }
+  };
   
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-lg">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b bg-gray-50 rounded-t-lg">
-        <h2 className="text-lg font-semibold text-gray-800">AI Assistant</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onQuickAdd}
-          className="flex items-center gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Quick Add
-        </Button>
-      </div>
+      <ChatHeader
+        onQuickAdd={onQuickAdd || (() => {})}
+        onShowCalendar={() => setShowCalendar(true)}
+      />
 
-      {/* Messages */}
+      <CalendarDialog
+        open={showCalendar}
+        onOpenChange={setShowCalendar}
+      />
+
+      {/* Calendar Modal */}
+      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
+        <DialogContent className="max-w-7xl h-[90vh] w-[95vw]">
+          <DialogHeader>
+            <DialogTitle>My Google Calendar</DialogTitle>
+          </DialogHeader>
+          <CalendarModal />
+        </DialogContent>
+      </Dialog>
+
+
+      {/* Chat Messages Logic */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 py-8">
-            <p className="text-lg mb-2">👋 Hi! I'm your AI scheduling assistant.</p>
-            <p className="text-sm">Try saying something like:</p>
-            <p className="text-sm italic">"Dinner with Rachel at 7 PM tomorrow"</p>
-          </div>
-        )}
-
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                message.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              <p className="text-sm">{message.content}</p>
-              
-              {/* Event Suggestion Card */}
-              {message.eventData && !message.eventData.isConfirmed && (
-                <div className="mt-3 p-3 bg-white rounded border border-gray-200 text-gray-800">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="h-4 w-4 text-blue-500" />
-                    <span className="font-medium">{message.eventData.title}</span>
-                  </div>
-                  
-                  <div className="space-y-1 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-3 w-3 text-gray-500" />
-                      <span>{formatDate(message.eventData.date)}</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-3 w-3 text-gray-500" />
-                      <span>{formatTime(message.eventData.time)}</span>
-                    </div>
-                    
-                    {message.eventData.location && (
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-3 w-3 text-gray-500" />
-                        <span>{message.eventData.location}</span>
-                      </div>
-                    )}
-                    
-                    {message.eventData.description && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        {message.eventData.description}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Conflicts Display */}
-                  {message.eventData.conflicts && message.eventData.conflicts.length > 0 && (
-                    <div className="mt-3 p-2 bg-red-50 rounded border border-red-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
-                        <span className="text-sm font-medium text-red-700">Conflicts:</span>
-                      </div>
-                      {message.eventData.conflicts.map((conflict: any, index: number) => (
-                        <div key={index} className="text-xs text-red-600">
-                          • {conflict.summary} at {formatTime(conflict.start.dateTime?.split('T')[1]?.substring(0, 5) || '')}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Alternative Slots */}
-                  {message.eventData.suggestedSlots && message.eventData.suggestedSlots.length > 0 && (
-                    <div className="mt-3 p-2 bg-green-50 rounded border border-green-200">
-                      <div className="text-sm font-medium text-green-700 mb-2">Available times:</div>
-                      <div className="flex flex-wrap gap-1">
-                        {message.eventData.suggestedSlots.slice(0, 6).map((slot: string, index: number) => {
-                          const time = new Date(slot);
-                          const timeString = time.toLocaleTimeString('en-US', { 
-                            hour: 'numeric', 
-                            minute: '2-digit',
-                            hour12: true 
-                          });
-                          return (
-                            <Button
-                              key={index}
-                              size="sm"
-                              variant="outline"
-                              className="text-xs h-6"
-                              onClick={() => {
-                                const updatedEvent: EventSuggestion = {
-                                  title: message.eventData!.title,
-                                  date: message.eventData!.date,
-                                  time: time.toTimeString().substring(0, 5),
-                                  location: message.eventData!.location,
-                                  description: message.eventData!.description,
-                                  duration: message.eventData!.duration,
-                                  isConfirmed: false
-                                };
-                                confirmEvent(updatedEvent, message.id);
-                              }}
-                            >
-                              {timeString}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="flex gap-2 mt-3">
-                    <Button
-                      size="sm"
-                      onClick={() => confirmEvent(message.eventData!, message.id)}
-                      disabled={schedulingIds[message.id]}
-                      className="text-xs flex items-center gap-1"
-                    >
-                      {schedulingIds[message.id] ? (
-                        <>
-                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                          Scheduling...
-                        </>
-                      ) : (
-                        <>
-                          <Check className="h-3 w-3" />
-                          Confirm
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const declineMessage: ChatMessage = {
-                          id: Date.now().toString(),
-                          role: 'assistant',
-                          content: 'No problem! How would you like to modify this event?',
-                          timestamp: new Date()
-                        };
-                        setMessages(prev => [...prev, declineMessage]);
-                      }}
-                      className="text-xs flex items-center gap-1"
-                    >
-                      <X className="h-3 w-3" />
-                      Modify
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 rounded-lg px-4 py-2">
-              <div className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                <span className="text-sm text-gray-600">Thinking...</span>
-              </div>
+          <div className="pt-8">
+            <div className="text-center text-gray-600">
+              <p className="text-lg font-medium">👋 Welcome! I'm here to help you schedule events effortlessly ✨</p>
+              <p className="text-sm mt-2">Try saying something like "Dinner at 7 PM tomorrow" or use the "Quick Add" button above!</p>
             </div>
           </div>
         )}
-
+        
+        <ChatMessages
+          messages={messages}
+          confirmEvent={confirmEvent}
+          declineNewEvent={(id) => declineNewEvent(id, setMessages)}
+          rescheduleNewEvent={(event, id) => rescheduleNewEvent(event, id, setMessages)}
+          rescheduleExistingEvent={(conflict, id) => rescheduleExistingEvent(conflict, id, setMessages)}
+          schedulingIds={schedulingIds}
+          isLoading={isLoading}
+          setMessages={setMessages}
+        />
+        
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t bg-gray-50 rounded-b-lg">
-        <div className="flex gap-2">
-          <Input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message here... (e.g., 'Dinner with Rachel at 7 PM tomorrow')"
-            disabled={isLoading}
-            className="flex-1"
-          />
-          <Button
-            onClick={sendMessage}
-            disabled={!inputValue.trim() || isLoading}
-            className="px-4"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <ChatInput
+        value={inputValue}
+        onChange={setInputValue}
+        onSend={sendMessage}
+        onKeyPress={handleKeyPress}
+        disabled={isLoading}
+      />
+
+      {/* Phone Number Modal for SMS Reminders */}
+      <PhoneNumberModal
+        open={showPhoneModal}
+        onOpenChange={setShowPhoneModal}
+        onPhoneNumberSaved={handlePhoneNumberSaved}
+      />
+      
     </div>
   );
 }

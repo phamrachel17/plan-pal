@@ -123,16 +123,19 @@ export async function createCalendarEvent(
 export async function getAvailableSlots(
   accessToken: string,
   date: string,
-  duration: number = 60
+  duration: number = 60,
+  originalTime?: string
 ): Promise<string[]> {
   try {
     const calendar = getCalendarClient(accessToken);
     
     // Get events for the entire day
-    const startOfDay = new Date(date);
+    // Parse the date string properly to avoid timezone issues
+    const dateObj = new Date(date + 'T00:00:00');
+    const startOfDay = new Date(dateObj);
     startOfDay.setHours(0, 0, 0, 0);
     
-    const endOfDay = new Date(date);
+    const endOfDay = new Date(dateObj);
     endOfDay.setHours(23, 59, 59, 999);
     
     const response = await calendar.events.list({
@@ -146,34 +149,185 @@ export async function getAvailableSlots(
     const events = response.data.items || [];
     const availableSlots: string[] = [];
     
-    // Generate hourly slots from 8 AM to 8 PM
-    for (let hour = 8; hour <= 20; hour++) {
-      const slotStart = new Date(date);
-      slotStart.setHours(hour, 0, 0, 0);
+    console.log('Available slots - Events found:', events.length);
+    console.log('Available slots - Original time:', originalTime);
+    console.log('Available slots - Duration:', duration);
+    console.log('Available slots - Query date range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
+    console.log('Available slots - Query date range (local):', startOfDay.toLocaleString(), 'to', endOfDay.toLocaleString());
+    
+    // Log the conflicting events for debugging
+    events.forEach((event, index) => {
+      console.log(`Event ${index}: ${event.summary} from ${event.start?.dateTime || event.start?.date} to ${event.end?.dateTime || event.end?.date}`);
+      console.log(`  - Start type: ${event.start?.dateTime ? 'dateTime' : 'date'}`);
+      console.log(`  - End type: ${event.end?.dateTime ? 'dateTime' : 'date'}`);
       
-      const slotEnd = new Date(slotStart);
-      slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+      // Add more detailed date information
+      if (event.start?.dateTime) {
+        const startDate = new Date(event.start.dateTime);
+        console.log(`  - Start dateTime parsed: ${startDate.toISOString()} (${startDate.toLocaleString()})`);
+      }
+      if (event.start?.date) {
+        const startDate = new Date(event.start.date);
+        console.log(`  - Start date parsed: ${startDate.toISOString()} (${startDate.toLocaleString()})`);
+      }
+    });
+    
+    // If we have an original time, generate slots around that time first
+    if (originalTime) {
+      const [hours, minutes] = originalTime.split(':').map(Number);
+      const originalHour = hours;
       
-      // Check if this slot conflicts with any existing events
-      const hasConflict = events.some(event => {
-        const eventStart = new Date(event.start?.dateTime || event.start?.date || '');
-        const eventEnd = new Date(event.end?.dateTime || event.end?.date || '');
-        
-        return (
-          (slotStart >= eventStart && slotStart < eventEnd) ||
-          (slotEnd > eventStart && slotEnd <= eventEnd) ||
-          (slotStart <= eventStart && slotEnd >= eventEnd)
-        );
-      });
-      
-      if (!hasConflict) {
-        availableSlots.push(slotStart.toISOString());
+      // Generate slots around the original time (±2 hours, every 30 minutes)
+      // But skip the original time if it conflicts
+      for (let offset = -2; offset <= 2; offset += 0.5) {
+        const slotHour = originalHour + offset;
+        if (slotHour >= 6 && slotHour <= 22) { // Reasonable time range
+          // Create slot times using the same date parsing method as the query
+          const slotStart = new Date(date + 'T00:00:00');
+          slotStart.setHours(Math.floor(slotHour), (slotHour % 1) * 60, 0, 0);
+          
+          const slotEnd = new Date(slotStart);
+          slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+          
+          // Check if this slot conflicts with any existing events
+          const hasConflict = events.some(event => {
+            const eventStartStr = event.start?.dateTime || event.start?.date;
+            const eventEndStr = event.end?.dateTime || event.end?.date;
+            
+            // Skip events with undefined dates
+            if (!eventStartStr || !eventEndStr) {
+              console.log(`Skipping event "${event.summary}" - undefined dates`);
+              return false;
+            }
+            
+            const eventStart = new Date(eventStartStr);
+            const eventEnd = new Date(eventEndStr);
+            
+            // Check if dates are valid
+            if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
+              console.log(`Skipping event "${event.summary}" - invalid dates`);
+              return false;
+            }
+            
+            // Handle all-day events (date only, no time)
+            if (event.start?.date && !event.start?.dateTime) {
+              // All-day event - check if the slot date falls within the event date range
+              const eventStartDate = eventStart.toDateString();
+              const eventEndDate = eventEnd.toDateString();
+              const slotDate = slotStart.toDateString();
+              
+              // Check if slot date is between event start and end (inclusive)
+              const slotTime = slotStart.getTime();
+              const eventStartTime = eventStart.getTime();
+              const eventEndTime = eventEnd.getTime();
+              
+              if (slotTime >= eventStartTime && slotTime < eventEndTime) {
+                console.log(`Slot ${formatTimeTo12Hour(slotStart.getHours(), slotStart.getMinutes())} conflicts with all-day event "${event.summary}" (${eventStartStr} to ${eventEndStr})`);
+                return true;
+              }
+              return false;
+            }
+            
+            // More precise conflict detection for timed events
+            const conflicts = (
+              (slotStart >= eventStart && slotStart < eventEnd) ||
+              (slotEnd > eventStart && slotEnd <= eventEnd) ||
+              (slotStart <= eventStart && slotEnd >= eventEnd) ||
+              // Also check for partial overlaps
+              (slotStart < eventStart && slotEnd > eventStart) ||
+              (slotStart < eventEnd && slotEnd > eventEnd)
+            );
+            
+            if (conflicts) {
+              console.log(`Slot ${formatTimeTo12Hour(slotStart.getHours(), slotStart.getMinutes())} conflicts with "${event.summary}"`);
+            }
+            
+            return conflicts;
+          });
+          
+          if (!hasConflict) {
+            // Format time in 12-hour format
+            const formattedTime = formatTimeTo12Hour(slotStart.getHours(), slotStart.getMinutes());
+            availableSlots.push(formattedTime);
+          } else {
+            console.log(`Slot ${formatTimeTo12Hour(slotStart.getHours(), slotStart.getMinutes())} conflicts with existing event`);
+          }
+        }
       }
     }
     
-    return availableSlots;
+    // If we don't have enough slots around the original time, add more general slots
+    if (availableSlots.length < 3) {
+      // Generate hourly slots from 8 AM to 8 PM
+      for (let hour = 8; hour <= 20; hour++) {
+        // Create slot times using the same date parsing method as the query
+        const slotStart = new Date(date + 'T00:00:00');
+        slotStart.setHours(hour, 0, 0, 0);
+        
+        const slotEnd = new Date(slotStart);
+        slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+        
+        // Check if this slot conflicts with any existing events
+        const hasConflict = events.some(event => {
+          const eventStartStr = event.start?.dateTime || event.start?.date;
+          const eventEndStr = event.end?.dateTime || event.end?.date;
+          
+          // Skip events with undefined dates
+          if (!eventStartStr || !eventEndStr) {
+            return false;
+          }
+          
+          const eventStart = new Date(eventStartStr);
+          const eventEnd = new Date(eventEndStr);
+          
+          // Check if dates are valid
+          if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
+            return false;
+          }
+          
+          // Handle all-day events (date only, no time)
+          if (event.start?.date && !event.start?.dateTime) {
+            // All-day event - check if the slot date falls within the event date range
+            const slotTime = slotStart.getTime();
+            const eventStartTime = eventStart.getTime();
+            const eventEndTime = eventEnd.getTime();
+            
+            // Check if slot date is between event start and end (inclusive)
+            return slotTime >= eventStartTime && slotTime < eventEndTime;
+          }
+          
+          // More precise conflict detection for timed events
+          return (
+            (slotStart >= eventStart && slotStart < eventEnd) ||
+            (slotEnd > eventStart && slotEnd <= eventEnd) ||
+            (slotStart <= eventStart && slotEnd >= eventEnd) ||
+            // Also check for partial overlaps
+            (slotStart < eventStart && slotEnd > eventStart) ||
+            (slotStart < eventEnd && slotEnd > eventEnd)
+          );
+        });
+        
+        if (!hasConflict) {
+          const formattedTime = formatTimeTo12Hour(slotStart.getHours(), slotStart.getMinutes());
+          if (!availableSlots.includes(formattedTime)) {
+            availableSlots.push(formattedTime);
+          }
+        }
+      }
+    }
+    
+    console.log('Available slots generated:', availableSlots);
+    return availableSlots.slice(0, 6); // Return max 6 suggestions
   } catch (error) {
     console.error('Error getting available slots:', error);
     return [];
   }
+}
+
+// Helper function to format time in 12-hour format
+function formatTimeTo12Hour(hours: number, minutes: number): string {
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const displayHour = hours % 12 || 12;
+  const displayMinutes = minutes.toString().padStart(2, '0');
+  return `${displayHour}:${displayMinutes} ${ampm}`;
 }

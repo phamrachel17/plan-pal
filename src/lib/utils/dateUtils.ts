@@ -8,22 +8,6 @@
  * @returns Valid Date object
  */
 export function parseEventDate(dateString: string): Date {
-  // Handle potential year issues - if year seems wrong, assume current year
-  const currentYear = new Date().getFullYear();
-  const dateParts = dateString.split('-');
-  
-  if (dateParts.length === 3) {
-    const year = parseInt(dateParts[0]);
-    const month = parseInt(dateParts[1]);
-    const day = parseInt(dateParts[2]);
-    
-    // If year is way off (like 2025 when we're in 2024), correct it
-    if (year > currentYear + 1 || year < currentYear - 1) {
-      console.log(`Correcting year from ${year} to ${currentYear} for date: ${dateString}`);
-      dateString = `${currentYear}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    }
-  }
-  
   const date = new Date(dateString + 'T00:00:00');
   
   if (isNaN(date.getTime())) {
@@ -58,8 +42,7 @@ export function parseEventTime(timeString: string): { hours: number; minutes: nu
 export function createEventDateTime(
   dateString: string, 
   timeString: string, 
-  duration: number = 60,
-  timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone
+  duration: number = 60
 ): { start: string; end: string } {
   const eventDate = parseEventDate(dateString);
   const { hours, minutes } = parseEventTime(timeString);
@@ -76,6 +59,33 @@ export function createEventDateTime(
     start: startDateTime.toISOString(),
     end: endDateTime.toISOString()
   };
+}
+
+/**
+ * Format a date string for display
+ * @param dateString - Date string in YYYY-MM-DD format
+ * @returns Formatted date string
+ */
+export function formatDate(dateString: string): string {
+  return new Date(dateString + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
+/**
+ * Format a time string for display
+ * @param timeString - Time string in HH:MM format
+ * @returns Formatted time string
+ */
+export function formatTime(timeString: string): string {
+  const [hours, minutes] = timeString.split(':');
+  const hour = parseInt(hours);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minutes} ${ampm}`;
 }
 
 /**

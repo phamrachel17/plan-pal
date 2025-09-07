@@ -6,6 +6,11 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   eventData?: EventSuggestion;
+  rescheduleContext?: {
+    type: 'existing';
+    conflictId?: string;
+    originalEvent?: CalendarEvent;
+  };
 }
 
 export interface EventSuggestion {
@@ -18,6 +23,10 @@ export interface EventSuggestion {
   isConfirmed: boolean;
   conflicts?: CalendarEvent[]; // For conflict detection
   suggestedSlots?: string[]; // Alternative time slots
+  rescheduleExisting?: {
+    originalEventId?: string;
+    originalEvent?: CalendarEvent;
+  };
 }
 
 export interface ChatResponse {
