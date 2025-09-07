@@ -42,21 +42,50 @@ export async function PUT(request: NextRequest) {
       description: eventData.description || '',
       location: eventData.location || '',
       start: {
-        dateTime: start.toISOString(),
+        dateTime: start,
         timeZone: 'America/New_York', // TODO: Get from user preferences
       },
       end: {
-        dateTime: end.toISOString(),
+        dateTime: end,
         timeZone: 'America/New_York', // TODO: Get from user preferences
       },
     };
 
     // Update the event
-    const response = await calendar.events.update({
-      calendarId: 'primary',
-      eventId: eventId,
-      requestBody: updatedEvent,
-    });
+    let response;
+    try {
+      response = await calendar.events.update({
+        calendarId: 'primary',
+        eventId: eventId,
+        requestBody: updatedEvent,
+      });
+    } catch (error: any) {
+      console.error('Error updating calendar event:', error);
+      
+      // Handle authentication errors specifically
+      if (error.code === 401 || error.status === 401) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Authentication failed. Please sign out and sign in again to refresh your calendar access.',
+          } as ApiResponse<null>,
+          { status: 401 }
+        );
+      }
+      
+      // Handle other API errors
+      if (error.code === 403) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Calendar access denied. Please check your Google Calendar permissions.',
+          } as ApiResponse<null>,
+          { status: 403 }
+        );
+      }
+      
+      throw error; // Re-throw other errors
+    }
 
     console.log('Event updated successfully:', response.data.id);
 

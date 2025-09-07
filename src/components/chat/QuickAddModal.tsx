@@ -199,7 +199,7 @@ export default function QuickAddModal({ open, onOpenChange, onEventCreated }: Qu
           {/* Step 1: Title */}
           {step === 1 && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">What's the event?</h3>
+              <h3 className="text-lg font-semibold">What&apos;s the event?</h3>
               
               {/* Quick Title Options */}
               <div className="grid grid-cols-3 gap-2">

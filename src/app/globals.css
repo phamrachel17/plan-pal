@@ -120,3 +120,53 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Override react-big-calendar width constraints */
+.rbc-calendar {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: none !important;
+}
+
+.rbc-month-view {
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: none !important;
+}
+
+.rbc-header {
+  width: 100% !important;
+}
+
+.rbc-date-cell {
+  width: 100% !important;
+}
+
+.rbc-row {
+  width: 100% !important;
+}
+
+.rbc-month-row {
+  width: 100% !important;
+}
+
+.rbc-day-bg {
+  width: 100% !important;
+}
+
+/* Force calendar to use full container width */
+.rbc-calendar * {
+  box-sizing: border-box !important;
+}
+
+/* Force dialog to be wide */
+[data-radix-dialog-content] {
+  max-width: 80vw !important;
+  width: 80vw !important;
+}
+
+/* Override any dialog width constraints */
+.dialog-content {
+  max-width: 80vw !important;
+  width: 80vw !important;
+}

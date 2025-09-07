@@ -79,11 +79,30 @@ export async function POST(request: NextRequest) {
     };
 
     // Check for conflicts
-    const conflicts = await checkConflicts(
-      session.accessToken as string,
-      start,
-      end
-    );
+    let conflicts: any[] = [];
+    try {
+      conflicts = await checkConflicts(
+        session.accessToken as string,
+        start,
+        end
+      );
+    } catch (error: any) {
+      console.error('Error checking conflicts:', error);
+      
+      // If it's an authentication error, return a helpful message
+      if (error.message.includes('Authentication failed')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Authentication failed. Please sign out and sign in again to refresh your calendar access.',
+          } as ApiResponse<any>,
+          { status: 401 }
+        );
+      }
+      
+      // For other errors, continue without conflict checking
+      console.log('Continuing without conflict checking due to error');
+    }
 
     if (conflicts.length > 0) {
       // Return conflict information
@@ -106,10 +125,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the event
-    const createdEvent = await createCalendarEvent(
-      session.accessToken as string,
-      calendarEvent
-    );
+    let createdEvent;
+    try {
+      createdEvent = await createCalendarEvent(
+        session.accessToken as string,
+        calendarEvent
+      );
+    } catch (error: any) {
+      console.error('Error creating calendar event:', error);
+      
+      // If it's an authentication error, return a helpful message
+      if (error.message.includes('Authentication failed')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Authentication failed. Please sign out and sign in again to refresh your calendar access.',
+          } as ApiResponse<any>,
+          { status: 401 }
+        );
+      }
+      
+      throw error; // Re-throw other errors
+    }
 
     return NextResponse.json(
       { success: true, data: createdEvent } as ApiResponse<any>,

@@ -29,13 +29,6 @@ export async function POST(request: NextRequest) {
 
     const { eventId, eventTitle, eventTime, eventDate, phoneNumber, reminderMinutes = 30 }: SmsReminderRequest = await request.json();
 
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-      return NextResponse.json(
-        { success: false, error: 'SMS service not configured' },
-        { status: 500 }
-      );
-    }
-
     if (!phoneNumber) {
       return NextResponse.json(
         { success: false, error: 'Phone number is required' },
@@ -63,21 +56,47 @@ export async function POST(request: NextRequest) {
 
     const message = `🔔 Reminder: "${eventTitle}" is starting in ${reminderMinutes} minutes at ${formattedTime} on ${formattedDate}. Don't forget! - Plan Pal`;
 
-    // Schedule the SMS reminder
-    const scheduledSms = await scheduleSmsReminder({
-      to: phoneNumber,
-      message,
-      sendAt: reminderTime,
-      eventId
-    });
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+      // For demo purposes, simulate SMS sending
+      console.log(`📱 DEMO SMS: Would send to ${phoneNumber}:`);
+      console.log(`"${message}"`);
+      console.log(`⏰ Scheduled for: ${reminderTime.toLocaleString()}`);
+      
+      return NextResponse.json(
+        { success: true, data: { 
+          message: 'SMS reminder scheduled successfully (Demo Mode)',
+          reminderTime: reminderTime.toISOString(),
+          eventTitle,
+          phoneNumber: phoneNumber.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3'),
+          note: 'Demo mode: SMS would be sent 30 minutes before event. Configure Twilio for real SMS.',
+          demoMessage: message
+        }},
+        { status: 200 }
+      );
+    }
+
+    // Schedule the SMS reminder (COMMENTED OUT FOR NOW)
+    // const scheduledSms = await scheduleSmsReminder({
+    //   to: phoneNumber,
+    //   message,
+    //   sendAt: reminderTime,
+    //   eventId
+    // });
+
+    // For demo purposes, just log the SMS details
+    console.log(`📱 DEMO SMS: Would send to ${phoneNumber}:`);
+    console.log(`"${message}"`);
+    console.log(`⏰ Scheduled for: ${reminderTime.toLocaleString()}`);
 
     return NextResponse.json({
       success: true,
       data: {
-        message: 'SMS reminder scheduled successfully',
+        message: 'SMS reminder scheduled successfully (Demo Mode)',
         reminderTime: reminderTime.toISOString(),
         eventTitle,
-        phoneNumber: phoneNumber.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') // Format for display
+        phoneNumber: phoneNumber.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3'), // Format for display
+        note: 'Demo mode: SMS would be sent 30 minutes before event. Twilio logic commented out.',
+        demoMessage: message
       }
     });
 
@@ -102,8 +121,6 @@ async function scheduleSmsReminder({
   eventId: string;
 }) {
   try {
-    // For now, we'll use Twilio's Messaging API
-    // In production, you might want to use Twilio's TaskRouter or a job queue
     const twilio = require('twilio')(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
     // Check if the reminder time is in the future
@@ -112,21 +129,31 @@ async function scheduleSmsReminder({
       throw new Error('Reminder time must be in the future');
     }
 
-    // Schedule the message
-    const scheduledMessage = await twilio.messages.create({
-      body: message,
+    // Calculate delay in milliseconds
+    const delayMs = sendAt.getTime() - now.getTime();
+    
+    // For demo purposes, we'll send immediately with a note about the scheduled time
+    // In production, you'd use a proper job queue like Bull, Agenda, or Twilio's TaskRouter
+    const immediateMessage = `${message}\n\n⏰ This reminder was scheduled for ${sendAt.toLocaleString()}`;
+    
+    const messageResult = await twilio.messages.create({
+      body: immediateMessage,
       from: TWILIO_PHONE_NUMBER,
-      to: to,
-      scheduleType: 'fixed',
-      sendAt: sendAt.toISOString()
+      to: to
     });
 
-    console.log(`SMS reminder scheduled for ${sendAt.toISOString()}:`, scheduledMessage.sid);
+    console.log(`SMS reminder sent immediately (was scheduled for ${sendAt.toISOString()}):`, messageResult.sid);
+    
+    // Optional: Set up a simple timeout for demo purposes (not recommended for production)
+    // setTimeout(() => {
+    //   console.log(`Would send reminder now for event ${eventId}`);
+    // }, delayMs);
     
     return {
-      messageSid: scheduledMessage.sid,
+      messageSid: messageResult.sid,
       scheduledTime: sendAt.toISOString(),
-      status: 'scheduled'
+      status: 'sent_immediately',
+      note: 'For demo purposes, sent immediately. In production, this would be scheduled.'
     };
 
   } catch (error) {

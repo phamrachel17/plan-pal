@@ -2,14 +2,12 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Dialog, DialogContent,  DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChatMessage, EventSuggestion } from '@/lib/types';
-import CalendarModal from '../calendar/CalendarModal';
 import ChatHeader from './ChatHeader';
 import ChatInput from './ChatInput';
 import CalendarDialog from '../calendar/CalendarDialog';
 import ChatMessages from './ChatMessages';
-import PhoneNumberModal from '../PhoneNumberModal';
+// import PhoneNumberModal from '../PhoneNumberModal'; // COMMENTED OUT
 import { declineNewEvent, rescheduleNewEvent, rescheduleExistingEvent } from '../logic/conflicts';
 
 interface ChatUIProps {
@@ -24,15 +22,29 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [schedulingIds, setSchedulingIds] = useState<Record<string, boolean>>({});
   const [showCalendar, setShowCalendar] = useState(false);
-  const [showPhoneModal, setShowPhoneModal] = useState(false);
-  const [userPhoneNumber, setUserPhoneNumber] = useState<string>('');
-  const [pendingEventForSms, setPendingEventForSms] = useState<EventSuggestion | null>(null);
+  // SMS-related state commented out
+  // const [showPhoneModal, setShowPhoneModal] = useState(false);
+  // const [userPhoneNumber, setUserPhoneNumber] = useState<string>('');
+  // const [pendingEventForSms, setPendingEventForSms] = useState<EventSuggestion | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Check for session errors and show authentication message
+  useEffect(() => {
+    if (session?.error === 'RefreshAccessTokenError') {
+      const authErrorMessage: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '🔐 Your calendar access has expired. Please sign out and sign in again to continue scheduling events.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, authErrorMessage]);
+    }
+  }, [session?.error]);
 
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -157,19 +169,19 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
           const confirmedEvent = { ...eventData, isConfirmed: true };
           onEventConfirm?.(confirmedEvent);
           
-          // Check if user has phone number for SMS reminders
-          if (!userPhoneNumber) {
-            setPendingEventForSms(eventData);
-            setShowPhoneModal(true);
-          } else {
-            // Schedule SMS reminder
-            await scheduleSmsReminder(eventData);
-          }
+          // SMS reminder logic commented out for now
+          // if (!userPhoneNumber) {
+          //   setPendingEventForSms(eventData);
+          //   setShowPhoneModal(true);
+          // } else {
+          //   // Schedule SMS reminder
+          //   await scheduleSmsReminder(eventData);
+          // }
           
           const confirmationMessage: ChatMessage = {
             id: Date.now().toString(),
             role: 'assistant',
-            content: `✅ Great! I've scheduled "${eventData.title}" for ${formatDate(eventData.date)} at ${formatTime(eventData.time)}.${userPhoneNumber ? ' 📱 SMS reminder scheduled!' : ''}`,
+            content: `✅ Great! I've scheduled "${eventData.title}" for ${formatDate(eventData.date)} at ${formatTime(eventData.time)}.`,
             timestamp: new Date()
           };
           setMessages(prev => [...prev, confirmationMessage]);
@@ -222,55 +234,9 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
     });
   };
 
-  const scheduleSmsReminder = async (eventData: EventSuggestion) => {
-    if (!userPhoneNumber) return;
-
-    try {
-      const response = await fetch('/api/sms', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventId: Date.now().toString(), // In production, use actual event ID from calendar
-          eventTitle: eventData.title,
-          eventTime: eventData.time,
-          eventDate: eventData.date,
-          phoneNumber: userPhoneNumber,
-          reminderMinutes: 30
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('SMS reminder scheduled:', data.data);
-      } else {
-        console.error('Failed to schedule SMS reminder:', data.error);
-      }
-    } catch (error) {
-      console.error('Error scheduling SMS reminder:', error);
-    }
-  };
-
-  const handlePhoneNumberSaved = async (phoneNumber: string) => {
-    setUserPhoneNumber(phoneNumber);
-    
-    // If there's a pending event, schedule SMS reminder for it
-    if (pendingEventForSms) {
-      await scheduleSmsReminder(pendingEventForSms);
-      setPendingEventForSms(null);
-      
-      // Update the confirmation message to include SMS info
-      const smsMessage: ChatMessage = {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: `📱 SMS reminder scheduled for "${pendingEventForSms.title}"! You'll get a text 30 minutes before the event.`,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, smsMessage]);
-    }
-  };
+  // SMS-related functions commented out
+  // const scheduleSmsReminder = async (eventData: EventSuggestion) => { ... }
+  // const handlePhoneNumberSaved = async (phoneNumber: string) => { ... }
   
 
   return (
@@ -285,24 +251,14 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
         onOpenChange={setShowCalendar}
       />
 
-      {/* Calendar Modal */}
-      <Dialog open={showCalendar} onOpenChange={setShowCalendar}>
-        <DialogContent className="max-w-7xl h-[90vh] w-[95vw]">
-          <DialogHeader>
-            <DialogTitle>My Google Calendar</DialogTitle>
-          </DialogHeader>
-          <CalendarModal />
-        </DialogContent>
-      </Dialog>
-
 
       {/* Chat Messages Logic */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
           <div className="pt-8">
             <div className="text-center text-gray-600">
-              <p className="text-lg font-medium">👋 Welcome! I'm here to help you schedule events effortlessly ✨</p>
-              <p className="text-sm mt-2">Try saying something like "Dinner at 7 PM tomorrow" or use the "Quick Add" button above!</p>
+              <p className="text-lg font-medium">👋 Welcome! I&apos;m here to help you schedule events effortlessly ✨</p>
+              <p className="text-sm mt-2">Try saying something like &quot;Dinner at 7 PM tomorrow&quot; or use the &quot;Quick Add&quot; button above!</p>
             </div>
           </div>
         )}
@@ -329,12 +285,12 @@ export default function ChatUI({ onEventConfirm, onQuickAdd }: ChatUIProps) {
         disabled={isLoading}
       />
 
-      {/* Phone Number Modal for SMS Reminders */}
-      <PhoneNumberModal
+      {/* Phone Number Modal for SMS Reminders - COMMENTED OUT */}
+      {/* <PhoneNumberModal
         open={showPhoneModal}
         onOpenChange={setShowPhoneModal}
         onPhoneNumberSaved={handlePhoneNumberSaved}
-      />
+      /> */}
       
     </div>
   );

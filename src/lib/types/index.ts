@@ -7,9 +7,9 @@ export interface ChatMessage {
   timestamp: Date;
   eventData?: EventSuggestion;
   rescheduleContext?: {
-    type: 'existing';
+    type: 'existing' | 'new';
     conflictId?: string;
-    originalEvent?: CalendarEvent;
+    originalEvent?: CalendarEvent | EventSuggestion;
   };
 }
 

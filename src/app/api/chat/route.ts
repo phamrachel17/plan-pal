@@ -21,11 +21,20 @@ export async function POST(request: NextRequest) {
     console.log('Reschedule context:', rescheduleContext);
 
     // Handle reschedule context
-    if (rescheduleContext?.type === 'existing') {
-      // User is providing a new time for an existing event
+    if (rescheduleContext?.type === 'existing' || rescheduleContext?.type === 'new') {
+      // User is providing a new time for rescheduling
       // For reschedule, we only need to parse the time, not create a full event
       let newTime = '';
-      let newDate = rescheduleContext.originalEvent?.start?.dateTime?.split('T')[0] || '';
+      let newDate = '';
+      
+      // Extract date based on reschedule type
+      if (rescheduleContext.type === 'existing') {
+        // For existing events, use the original event's date
+        newDate = rescheduleContext.originalEvent?.start?.dateTime?.split('T')[0] || '';
+      } else if (rescheduleContext.type === 'new') {
+        // For new events, use the original event's date
+        newDate = rescheduleContext.originalEvent?.date || '';
+      }
       
       // Simple time parsing for common formats
       const timeMatch = message.match(/(\d{1,2}):?(\d{0,2})\s*(am|pm|AM|PM)?/i);
@@ -57,19 +66,25 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // Create a modified event suggestion for the existing event
+      // Create a modified event suggestion based on reschedule type
       const eventSuggestion: EventSuggestion = {
-        title: rescheduleContext.originalEvent?.summary || '',
+        title: rescheduleContext.type === 'existing' 
+          ? rescheduleContext.originalEvent?.summary || ''
+          : rescheduleContext.originalEvent?.title || '',
         date: newDate,
         time: newTime,
-        location: rescheduleContext.originalEvent?.location || '',
-        description: rescheduleContext.originalEvent?.description || '',
-        duration: 60, // Default duration
+        location: rescheduleContext.type === 'existing'
+          ? rescheduleContext.originalEvent?.location || ''
+          : rescheduleContext.originalEvent?.location || '',
+        description: rescheduleContext.type === 'existing'
+          ? rescheduleContext.originalEvent?.description || ''
+          : rescheduleContext.originalEvent?.description || '',
+        duration: rescheduleContext.type === 'existing' ? 60 : rescheduleContext.originalEvent?.duration || 60,
         isConfirmed: false,
-        rescheduleExisting: {
+        rescheduleExisting: rescheduleContext.type === 'existing' ? {
           originalEventId: rescheduleContext.conflictId,
           originalEvent: rescheduleContext.originalEvent
-        }
+        } : undefined
       };
 
       // Check for conflicts with the new time
@@ -103,8 +118,12 @@ export async function POST(request: NextRequest) {
       }
 
       // No conflicts, proceed with reschedule
+      const eventTitle = rescheduleContext.type === 'existing' 
+        ? rescheduleContext.originalEvent?.summary 
+        : rescheduleContext.originalEvent?.title;
+      
       const response: ChatResponse = {
-        message: `Great! I can reschedule "${rescheduleContext.originalEvent?.summary}" to ${newTime}. Would you like me to update the event?`,
+        message: `Great! I can reschedule "${eventTitle}" to ${newTime}. Would you like me to ${rescheduleContext.type === 'existing' ? 'update' : 'create'} the event?`,
         eventSuggestion,
         requiresConfirmation: true
       };
@@ -144,11 +163,33 @@ export async function POST(request: NextRequest) {
           parsedEvent.duration || 60
         );
         
-        const conflicts = await checkConflicts(
-          session.accessToken as string,
-          start,
-          end
-        );
+        let conflicts: any[] = [];
+        try {
+          conflicts = await checkConflicts(
+            session.accessToken as string,
+            start,
+            end
+          );
+        } catch (error: any) {
+          console.error('Error checking conflicts:', error);
+          
+          // If it's an authentication error, return a helpful message
+          if (error.message.includes('Authentication failed')) {
+            const authErrorResponse: ChatResponse = {
+              message: '🔐 Your calendar access has expired. Please sign out and sign in again to continue scheduling events.',
+              eventSuggestion,
+              requiresConfirmation: false
+            };
+            
+            return NextResponse.json(
+              { success: true, data: authErrorResponse } as ApiResponse<ChatResponse>,
+              { status: 200 }
+            );
+          }
+          
+          // For other errors, continue without conflict checking
+          console.log('Continuing without conflict checking due to error');
+        }
         
         if (conflicts.length > 0) {
           // Add conflicts to the event suggestion

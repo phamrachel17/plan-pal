@@ -16,7 +16,25 @@ export const rescheduleNewEvent = async (
   setMessages: (fn: (prev: ChatMessage[]) => ChatMessage[]) => void
 ) => {
   try {
-    // Try to schedule the event again to get suggested slots
+    // For rescheduling new events, we need to create a special message
+    // that indicates we're waiting for a new time to reschedule the new event
+    const msg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "assistant",
+      content: `To reschedule "${eventData.title}", what time would work better for you? You can choose from the suggested slots below or tell me your own time.`,
+      timestamp: new Date(),
+      eventData: {
+        ...eventData,
+        conflicts: undefined // Clear conflicts since we're showing alternatives
+      },
+      // Add metadata to indicate we're waiting for a reschedule time for the NEW event
+      rescheduleContext: {
+        type: 'new',
+        originalEvent: eventData
+      }
+    };
+    
+    // Try to get suggested slots
     const response = await fetch("/api/schedule", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -25,33 +43,19 @@ export const rescheduleNewEvent = async (
     
     if (response.status === 409) {
       const data = await response.json();
-      const msg: ChatMessage = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: "Here are some available time slots for your event:",
-        timestamp: new Date(),
-        eventData: {
-          ...eventData,
-          suggestedSlots: data.data.suggestedSlots,
-          conflicts: undefined // Clear conflicts since we're showing alternatives
-        },
-      };
-      setMessages((prev: ChatMessage[]) => [...prev, msg]);
-    } else {
-      const msg: ChatMessage = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: "I couldn't find alternative time slots. Please try a different time.",
-        timestamp: new Date(),
-      };
-      setMessages((prev: ChatMessage[]) => [...prev, msg]);
+      msg.eventData = {
+        ...msg.eventData,
+        suggestedSlots: data.data.suggestedSlots
+      } as EventSuggestion;
     }
+    
+    setMessages((prev: ChatMessage[]) => [...prev, msg]);
   } catch (error) {
-    console.error('Error getting suggested slots:', error);
+    console.error('Error handling reschedule new:', error);
     const msg: ChatMessage = {
       id: Date.now().toString(),
       role: "assistant",
-      content: "Sorry, I couldn't find alternative time slots. Please try again.",
+      content: "Sorry, I couldn't help with rescheduling the new event. Please try again.",
       timestamp: new Date(),
     };
     setMessages((prev: ChatMessage[]) => [...prev, msg]);

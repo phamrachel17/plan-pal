@@ -10,11 +10,13 @@ interface CalendarDialogProps {
 export default function CalendarDialog({ open, onOpenChange, refreshKey }: CalendarDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl h-[90vh] w-[95vw]">
-        <DialogHeader>
+      <DialogContent className="max-w-[80vw] w-[80vw] h-[80vh] !max-w-[80vw] !w-[80vw] flex flex-col p-0">
+        <DialogHeader className="p-4 border-b flex-shrink-0">
           <DialogTitle>My Google Calendar</DialogTitle>
         </DialogHeader>
-        <CalendarModal key={refreshKey} />
+        <div className="flex-1 overflow-hidden">
+          <CalendarModal key={refreshKey} />
+        </div>
       </DialogContent>
     </Dialog>
   );

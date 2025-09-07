@@ -37,28 +37,39 @@ export async function checkConflicts(
     });
 
     return response.data.items?.map(event => ({
-      id: event.id,
+      id: event.id || undefined,
       summary: event.summary || 'Untitled Event',
-      description: event.description,
+      description: event.description || undefined,
       start: {
-        dateTime: event.start?.dateTime,
-        date: event.start?.date,
-        timeZone: event.start?.timeZone,
+        dateTime: event.start?.dateTime || undefined,
+        date: event.start?.date || undefined,
+        timeZone: event.start?.timeZone || undefined,
       },
       end: {
-        dateTime: event.end?.dateTime,
-        date: event.end?.date,
-        timeZone: event.end?.timeZone,
+        dateTime: event.end?.dateTime || undefined,
+        date: event.end?.date || undefined,
+        timeZone: event.end?.timeZone || undefined,
       },
-      location: event.location,
+      location: event.location || undefined,
       attendees: event.attendees?.map(attendee => ({
         email: attendee.email || '',
-        displayName: attendee.displayName,
+        displayName: attendee.displayName || undefined,
       })),
     })) || [];
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error checking conflicts:', error);
-    return [];
+    
+    // Handle authentication errors specifically
+    if (error.code === 401 || error.status === 401) {
+      throw new Error('Authentication failed. Please sign out and sign in again to refresh your calendar access.');
+    }
+    
+    // Handle other API errors
+    if (error.code === 403) {
+      throw new Error('Calendar access denied. Please check your Google Calendar permissions.');
+    }
+    
+    throw new Error('Failed to check calendar conflicts. Please try again.');
   }
 }
 
@@ -88,27 +99,38 @@ export async function createCalendarEvent(
     });
 
     return {
-      id: response.data.id,
+      id: response.data.id || undefined,
       summary: response.data.summary || 'Untitled Event',
-      description: response.data.description,
+      description: response.data.description || undefined,
       start: {
-        dateTime: response.data.start?.dateTime,
-        date: response.data.start?.date,
-        timeZone: response.data.start?.timeZone,
+        dateTime: response.data.start?.dateTime || undefined,
+        date: response.data.start?.date || undefined,
+        timeZone: response.data.start?.timeZone || undefined,
       },
       end: {
-        dateTime: response.data.end?.dateTime,
-        date: response.data.end?.date,
-        timeZone: response.data.end?.timeZone,
+        dateTime: response.data.end?.dateTime || undefined,
+        date: response.data.end?.date || undefined,
+        timeZone: response.data.end?.timeZone || undefined,
       },
-      location: response.data.location,
+      location: response.data.location || undefined,
       attendees: response.data.attendees?.map(attendee => ({
         email: attendee.email || '',
-        displayName: attendee.displayName,
+        displayName: attendee.displayName || undefined,
       })),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating calendar event:', error);
+    
+    // Handle authentication errors specifically
+    if (error.code === 401 || error.status === 401) {
+      throw new Error('Authentication failed. Please sign out and sign in again to refresh your calendar access.');
+    }
+    
+    // Handle other API errors
+    if (error.code === 403) {
+      throw new Error('Calendar access denied. Please check your Google Calendar permissions.');
+    }
+    
     throw new Error('Failed to create calendar event');
   }
 }
