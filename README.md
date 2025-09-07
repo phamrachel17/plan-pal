@@ -124,25 +124,6 @@ Processes user messages and returns AI responses with event suggestions.
   }
 }
 ```
-
-## Next Steps
-
-- [ ] Google Calendar integration
-- [ ] SMS reminders with Twilio
-- [ ] User authentication
-- [ ] Event conflict detection
-- [ ] Calendar view component
-- [ ] Quick add modal
-- [ ] Event editing and deletion
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
 ## License
 
 MIT License - see LICENSE file for details
