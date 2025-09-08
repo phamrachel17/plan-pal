@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseEventWithGemini, generateConfirmationMessage } from '@/lib/api/gemini';
 import { ChatResponse, ApiResponse, EventSuggestion } from '@/lib/types';
-import { checkConflicts, getAvailableSlots } from '@/lib/api/calendar';
+import { checkConflicts } from '@/lib/api/calendar';
 import { createEventDateTime } from '@/lib/utils/dateUtils';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';

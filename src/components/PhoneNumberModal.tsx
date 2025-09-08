@@ -92,7 +92,7 @@ export default function PhoneNumberModal({ open, onOpenChange, onPhoneNumberSave
         <div className="space-y-4">
           <div className="text-sm text-gray-600">
             <p>📱 Get SMS reminders 30 minutes before your events!</p>
-            <p className="mt-1">We'll send you a friendly text to make sure you don't miss anything.</p>
+            <p className="mt-1">We&apos;ll send you a friendly text to make sure you don&apos;t miss anything.</p>
           </div>
 
           <div className="space-y-2">
@@ -115,7 +115,7 @@ export default function PhoneNumberModal({ open, onOpenChange, onPhoneNumberSave
           <div className="bg-blue-50 p-3 rounded-lg">
             <p className="text-sm text-blue-800">
               <strong>Example reminder:</strong><br />
-              🔔 Reminder: "Team Meeting" is starting in 30 minutes at 2:00 PM on Monday, January 15, 2024. Don't forget! - Plan Pal
+              🔔 Reminder: &quot;Team Meeting&quot; is starting in 30 minutes at 2:00 PM on Monday, January 15, 2024. Don&apos;t forget! - Plan Pal
             </p>
           </div>
 

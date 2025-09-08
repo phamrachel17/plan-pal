@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createCalendarEvent, checkConflicts, getAvailableSlots } from '@/lib/api/calendar';
 import { createEventDateTime, validateEventDate } from '@/lib/utils/dateUtils';
-import { EventSuggestion, ApiResponse } from '@/lib/types';
+import { ApiResponse } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {

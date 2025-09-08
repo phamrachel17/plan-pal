@@ -121,7 +121,7 @@ async function scheduleSmsReminder({
   eventId: string;
 }) {
   try {
-    const twilio = require('twilio')(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const twilio = (await import('twilio')).default(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
     // Check if the reminder time is in the future
     const now = new Date();
