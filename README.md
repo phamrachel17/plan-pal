@@ -1,6 +1,7 @@
 # Plan Pal - AI-Powered Schedule Management
 
 A conversational web application that helps users manage their schedules using Google's Gemini AI.
+Demo video: https://snobbish-polecat.clueso.site/share/220f0fb3-5a82-44e1-833a-403a3c72de93
 
 ## Features
 
